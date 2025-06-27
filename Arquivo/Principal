@@ -1,0 +1,386 @@
+--[[
+    Frise X v2.0 - TEMPLATE BASE
+    Estrutura completa para UI avançada com comentários detalhados.
+    Basta colar suas lógicas em cada bloco indicado!
+]]
+
+--[ INÍCIO: CARREGAR UI E DEPENDÊNCIAS ]
+local omni = loadstring(game:HttpGet("https://raw.githubusercontent.com/TweedLeak-LeakScripts/FriseX/main/UI-Library"))()
+local UI = omni.new{
+    Name = "🔮 Frise X v2.0 🔮",
+    Credit = "linix812",
+    Color = Color3.fromRGB(122,28,187),
+    Bind = "LeftControl",
+    UseLoader = false,
+    FullName = "Frise X v2.0",
+    CheckKey = function(k) return k == "123" end,
+    Discord = "SeuDiscordAqui",
+}
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+----------------------------------------------------------------
+--[[
+    LÓGICA AVANÇADA FOV CIRCLE
+    - FOV dinâmico, otimizado para FPS, totalmente customizável!
+    - Já pronto para expansão (como modo "seguir mouse", gradiente, etc)
+]]
+local FOVCircle = Drawing.new("Circle")
+FOVCircle.Visible = false
+FOVCircle.Color = Color3.fromRGB(122,28,187)
+FOVCircle.Thickness = 2
+FOVCircle.Filled = false
+FOVCircle.Transparency = 0.7
+FOVCircle.Radius = 120
+
+-- Para animação/expansão futura:
+local FOVMode = "Center" -- ou "Mouse"
+local FOVTargetRadius = 120
+local FOVSmoothSpeed = 0.25
+local FOVGradient = false
+local FOVHue = 0
+
+game:GetService("RunService").RenderStepped:Connect(function(dt)
+    -- Cor gradiente animada?
+    if FOVGradient then
+        FOVHue = (FOVHue + dt*0.2) % 1
+        FOVCircle.Color = Color3.fromHSV(FOVHue,1,1)
+    end
+
+    -- Suavização do raio
+    if math.abs(FOVCircle.Radius - FOVTargetRadius) > 1 then
+        FOVCircle.Radius = FOVCircle.Radius + (FOVTargetRadius - FOVCircle.Radius) * FOVSmoothSpeed
+    else
+        FOVCircle.Radius = FOVTargetRadius
+    end
+
+    -- Centro dinâmico
+    if FOVMode == "Mouse" then
+        local mpos = game:GetService("UserInputService"):GetMouseLocation()
+        FOVCircle.Position = Vector2.new(mpos.X, mpos.Y)
+    else
+        FOVCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    end
+end)
+
+function ToggleFOVCircle(state)
+    FOVCircle.Visible = state
+end
+
+function SetFOVRadius(v)
+    FOVTargetRadius = v
+end
+
+function SetFOVOpacity(v)
+    FOVCircle.Transparency = v/100
+end
+
+function SetFOVColor(r,g,b)
+    FOVCircle.Color = Color3.fromRGB(r,g,b)
+    FOVGradient = false
+end
+
+function SetFOVMode(mode)
+    FOVMode = mode -- "Center" ou "Mouse"
+end
+
+function ToggleFOVGradient(state)
+    FOVGradient = state
+end
+
+----------------------------------------------------------------
+--[[
+    LÓGICA AVANÇADA CAPACIDADE FOV
+    - Limita quantos jogadores podem ser selecionados dentro do FOV.
+    - Use em aimbot, triggerbot, marcador, etc.
+]]
+local MaxTargetsInFOV = 3 -- padrão (pode alterar pelo slider na UI)
+
+function GetPlayersInFOV()
+    local cam = workspace.CurrentCamera
+    local center = (FOVMode == "Mouse")
+        and game:GetService("UserInputService"):GetMouseLocation()
+        or Vector2.new(cam.ViewportSize.X/2, cam.ViewportSize.Y/2)
+    local playersInFOV = {}
+
+    for _,plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
+            local hrp = plr.Character.HumanoidRootPart
+            local screenPos, onscreen = cam:WorldToViewportPoint(hrp.Position)
+            if onscreen then
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+                if dist <= FOVCircle.Radius then
+                    table.insert(playersInFOV, {Player=plr, Distance=dist})
+                end
+            end
+        end
+    end
+
+    table.sort(playersInFOV, function(a,b) return a.Distance < b.Distance end)
+    local result = {}
+    for i=1,math.min(MaxTargetsInFOV,#playersInFOV) do
+        table.insert(result, playersInFOV[i].Player)
+    end
+    return result
+end
+----------------------------------------------------------------
+--[[
+    LÓGICA AVANÇADA ESP
+    - Box, Nome, Vida, Tracer, altamente otimizado e customizável!
+]]
+local ESPSettings = {
+    Enabled = false, Box = true, Name = true, HP = true, Tracer = false,
+    BoxColor = Color3.fromRGB(122,28,187), NameColor = Color3.fromRGB(255,255,255),
+    HPColor = Color3.fromRGB(0,255,0), TracerColor = Color3.fromRGB(255,255,0)
+}
+local ESPObjects = {}
+
+function ClearESP()
+    for _,objs in pairs(ESPObjects) do
+        for _,obj in pairs(objs) do if obj.Remove then obj:Remove() end end
+    end
+    ESPObjects = {}
+end
+
+game:GetService("RunService").RenderStepped:Connect(function()
+    if not ESPSettings.Enabled then ClearESP() return end
+    for _,plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") and plr.Character.Humanoid.Health > 0 then
+            ESPObjects[plr] = ESPObjects[plr] or {}
+            local hrp = plr.Character.HumanoidRootPart
+            local pos,onscreen = Camera:WorldToViewportPoint(hrp.Position)
+            local mag = (hrp.Position - Camera.CFrame.p).magnitude
+            local scale = math.clamp(1750/mag, 2, 350)
+            local boxsize = Vector2.new(32, 44) * scale/60
+
+            -- BOX
+            if ESPSettings.Box then
+                local box = ESPObjects[plr].box or Drawing.new("Square")
+                box.Visible = onscreen
+                box.Color = ESPSettings.BoxColor
+                box.Thickness = 2
+                box.Filled = false
+                box.Size = boxsize
+                box.Position = Vector2.new(pos.X, pos.Y) - boxsize/2
+                ESPObjects[plr].box = box
+            elseif ESPObjects[plr].box then ESPObjects[plr].box.Visible = false end
+
+            -- NAME
+            if ESPSettings.Name then
+                local name = ESPObjects[plr].name or Drawing.new("Text")
+                name.Visible = onscreen
+                name.Text = plr.DisplayName or plr.Name
+                name.Position = Vector2.new(pos.X, pos.Y - boxsize.Y/2 - 16)
+                name.Size = 16
+                name.Center = true
+                name.Color = ESPSettings.NameColor
+                name.Outline = true
+                ESPObjects[plr].name = name
+            elseif ESPObjects[plr].name then ESPObjects[plr].name.Visible = false end
+
+            -- HP
+            if ESPSettings.HP then
+                local hp = ESPObjects[plr].hp or Drawing.new("Text")
+                hp.Visible = onscreen
+                hp.Text = "HP: "..math.floor(plr.Character.Humanoid.Health)
+                hp.Position = Vector2.new(pos.X, pos.Y + boxsize.Y/2)
+                hp.Size = 13
+                hp.Center = true
+                hp.Color = ESPSettings.HPColor
+                hp.Outline = true
+                ESPObjects[plr].hp = hp
+            elseif ESPObjects[plr].hp then ESPObjects[plr].hp.Visible = false end
+
+            -- TRACER
+            if ESPSettings.Tracer then
+                local tracer = ESPObjects[plr].tracer or Drawing.new("Line")
+                tracer.Visible = onscreen
+                tracer.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
+                tracer.To = Vector2.new(pos.X, pos.Y + boxsize.Y/2)
+                tracer.Color = ESPSettings.TracerColor
+                tracer.Thickness = 1.5
+                ESPObjects[plr].tracer = tracer
+            elseif ESPObjects[plr].tracer then ESPObjects[plr].tracer.Visible = false end
+
+        elseif ESPObjects[plr] then
+            for _,obj in pairs(ESPObjects[plr]) do if obj.Remove then obj.Visible = false end end
+        end
+    end
+end)
+
+function ToggleESP(state) ESPSettings.Enabled = state end
+function ToggleESPBox(state) ESPSettings.Box = state end
+function ToggleESPName(state) ESPSettings.Name = state end
+function ToggleESPHP(state) ESPSettings.HP = state end
+function ToggleESPTracer(state) ESPSettings.Tracer = state end
+function ESPRefresh() ClearESP() end
+
+----------------------------------------------------------------
+--[[
+    LÓGICA AVANÇADA CHAMS
+    - Chams com Highlight, cores customizadas, transparência, compatível com novos personagens.
+]]
+local ChamsEnabled = false
+local ChamsColor = Color3.fromRGB(0,255,255)
+local ChamsTransparency = 0.4
+local ChamsOutline = Color3.fromRGB(0,0,0)
+local ChamsOutlineTransparency = 0.8
+local ChamsObjects = {}
+
+function SetChamsColor(r,g,b)
+    if r then ChamsColor = Color3.fromRGB(r,ChamsColor.G*255,ChamsColor.B*255) end
+    if g then ChamsColor = Color3.fromRGB(ChamsColor.R*255,g,ChamsColor.B*255) end
+    if b then ChamsColor = Color3.fromRGB(ChamsColor.R*255,ChamsColor.G*255,b) end
+    for _,highlight in pairs(ChamsObjects) do if highlight:IsA("Highlight") then highlight.FillColor = ChamsColor end end
+end
+
+function ToggleChams(state)
+    ChamsEnabled = state
+    for _,plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local highlight = ChamsObjects[plr]
+            if state then
+                if not highlight or not highlight:IsA("Highlight") then
+                    highlight = Instance.new("Highlight")
+                    highlight.FillColor = ChamsColor
+                    highlight.FillTransparency = ChamsTransparency
+                    highlight.OutlineColor = ChamsOutline
+                    highlight.OutlineTransparency = ChamsOutlineTransparency
+                    highlight.Adornee = plr.Character
+                    highlight.Parent = plr.Character
+                    ChamsObjects[plr] = highlight
+                end
+                highlight.Enabled = true
+            elseif highlight then
+                highlight.Enabled = false
+            end
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+    plr.CharacterAdded:Connect(function(char)
+        if ChamsEnabled then
+            local highlight = Instance.new("Highlight")
+            highlight.FillColor = ChamsColor
+            highlight.FillTransparency = ChamsTransparency
+            highlight.OutlineColor = ChamsOutline
+            highlight.OutlineTransparency = ChamsOutlineTransparency
+            highlight.Adornee = char
+            highlight.Parent = char
+            ChamsObjects[plr] = highlight
+        end
+    end)
+end)
+
+----------------------------------------------------------------
+--[ UI: SEÇÃO AIMBOT ]
+local PageAimbot = UI:CreatePage("Aimbot 🔫")
+local SectionAimbot = PageAimbot:CreateSection("Controles Aimbot")
+
+SectionAimbot:CreateSlider{
+    Name="FOV", Min=50, Max=400, Default=100,
+    Callback=function(v)
+        if SetFOVRadius then SetFOVRadius(v) end
+    end
+}
+SectionAimbot:CreateSlider{
+    Name="Opacidade FOV", Min=0, Max=100, Default=60,
+    Callback=function(v)
+        if SetFOVOpacity then SetFOVOpacity(v) end
+    end
+}
+SectionAimbot:CreateToggle{
+    Name="Desenhar Círculo FOV", Default=true,
+    Callback=function(v)
+        if ToggleFOVCircle then ToggleFOVCircle(v) end
+    end
+}
+SectionAimbot:CreateSlider{
+    Name="Capacidade FOV", Min=1, Max=10, Default=3,
+    Callback=function(v)
+        MaxTargetsInFOV = v
+    end
+}
+
+----------------------------------------------------------------
+--[ UI: SEÇÃO VISUAL / ESP ]
+local PageVisual = UI:CreatePage("Visual 👁")
+local SectionVisual = PageVisual:CreateSection("ESP COMPLETO")
+
+SectionVisual:CreateToggle{
+    Name="ESP Geral", Default=false,
+    Callback=function(v)
+        if ToggleESP then ToggleESP(v) end
+    end
+}
+SectionVisual:CreateToggle{
+    Name="Box", Default=true,
+    Callback=function(v)
+        if ToggleESPBox then ToggleESPBox(v) end
+    end
+}
+SectionVisual:CreateToggle{
+    Name="Nome do Jogador", Default=true,
+    Callback=function(v)
+        if ToggleESPName then ToggleESPName(v) end
+    end
+}
+SectionVisual:CreateToggle{
+    Name="Vida", Default=true,
+    Callback=function(v)
+        if ToggleESPHP then ToggleESPHP(v) end
+    end
+}
+SectionVisual:CreateToggle{
+    Name="Desenhar Tracer", Default=false,
+    Callback=function(v)
+        if ToggleESPTracer then ToggleESPTracer(v) end
+    end
+}
+SectionVisual:CreateToggle{
+    Name="Chams", Default=true,
+    Callback=function(v)
+        if ToggleChams then ToggleChams(v) end
+    end
+}
+SectionVisual:CreateSlider{
+    Name="Cor Chams R", Min=0, Max=255, Default=0,
+    Callback=function(v)
+        if SetChamsColor then SetChamsColor(v, nil, nil) end
+    end
+}
+SectionVisual:CreateSlider{
+    Name="Cor Chams G", Min=0, Max=255, Default=255,
+    Callback=function(v)
+        if SetChamsColor then SetChamsColor(nil, v, nil) end
+    end
+}
+SectionVisual:CreateSlider{
+    Name="Cor Chams B", Min=0, Max=255, Default=255,
+    Callback=function(v)
+        if SetChamsColor then SetChamsColor(nil, nil, v) end
+    end
+}
+SectionVisual:CreateButton{
+    Name="Atualizar ESP",
+    Callback=function()
+        if ESPRefresh then ESPRefresh() end
+    end
+}
+
+----------------------------------------------------------------
+--[ OUTRAS SEÇÕES DA UI (Utilidades, Ragdoll, etc) ]
+-- Adicione mais blocos conforme quiser, mantendo o padrão dos callbacks!
+-- Exemplo:
+-- local SectionUtil = UI:CreatePage("Utilidades 🛠"):CreateSection("Geral")
+-- SectionUtil:CreateButton{ Name="Forçar Inicialização", Callback=function() if ForceInit then ForceInit() end end }
+
+----------------------------------------------------------------
+--[ NOTIFICAÇÃO FINAL ]
+UI:Notify({Title="Interface", Content="Painel carregado com sucesso!"})
+
+----------------------------------------------------------------
+--[ FIM DO SCRIPT ]
